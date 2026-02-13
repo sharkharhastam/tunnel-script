@@ -56,6 +56,50 @@ get_next_iran_id() {
     done
 }
 
+# --- STATUS & RESTART ---
+
+show_status() {
+    clear
+    echo -e "${CYAN}--- System Status ---${NC}"
+    
+    if [[ -f "/etc/wireguard/wg0.conf" ]]; then
+        echo -e "${YELLOW}>> WireGuard (wg0):${NC}"
+        systemctl status wg-quick@wg0 --no-pager | grep "Active:"
+    else
+        echo -e "${YELLOW}>> WireGuard:${NC} Not Installed"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}>> UDP2Raw Tunnels:${NC}"
+    found=0
+    for s in /etc/systemd/system/udp2raw*.service; do
+        if [[ -f "$s" ]]; then
+            s_name=$(basename "$s")
+            echo -n "   - $s_name: "
+            systemctl is-active "$s_name"
+            found=1
+        fi
+    done
+    
+    if [[ $found -eq 0 ]]; then echo "   No UDP2Raw services found."; fi
+    press_enter
+}
+
+restart_wg() {
+    echo -e "${YELLOW}[*] Restarting WireGuard (wg0)...${NC}"
+    if [[ -f "/etc/wireguard/wg0.conf" ]]; then
+        systemctl restart wg-quick@wg0
+        if [[ $? -eq 0 ]]; then
+            echo -e "${GREEN}WireGuard restarted successfully!${NC}"
+        else
+            echo -e "${RED}Failed to restart WireGuard! Check logs.${NC}"
+        fi
+    else
+        echo -e "${RED}WireGuard is not installed.${NC}"
+    fi
+    press_enter
+}
+
 # --- KHAREJ Functions ---
 
 setup_kharej_initial() {
@@ -120,7 +164,17 @@ EOF
     systemctl start wg-quick@wg0 udp2raw
     
     IP=$(curl -s http://checkip.amazonaws.com)
-    echo -e "${GREEN}Kharej Installed.${NC} Public Key: ${YELLOW}$MY_PUB${NC}"
+    
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "${GREEN}          KHAREJ SETUP COMPLETE              ${NC}"
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "Server Public Key (SAVE THIS): ${YELLOW}$MY_PUB${NC}"
+    echo -e "Assigned Internal IP:          ${YELLOW}$INT_IP${NC}"
+    echo -e "Tunnel Password:               ${YELLOW}$PASS${NC}"
+    echo -e "---------------------------------------------"
+    echo -e "${CYAN}Checking Status...${NC}"
+    systemctl status udp2raw --no-pager | grep "Active:"
+    press_enter
 }
 
 add_peer_kharej() {
@@ -150,7 +204,12 @@ AllowedIPs = $NEW_IP/32
 EOF
 
     systemctl restart wg-quick@wg0
+    
     echo -e "${GREEN}Peer Added Successfully!${NC}"
+    echo -e "Internal IP: ${YELLOW}$NEW_IP${NC}"
+    echo -e "${CYAN}Status (wg0):${NC}"
+    systemctl status wg-quick@wg0 --no-pager | grep "Active:"
+    press_enter
 }
 
 # --- IRAN Functions ---
@@ -197,9 +256,25 @@ EOF
     systemctl enable $SERVICE_NAME
     systemctl start $SERVICE_NAME
     
-    echo -e "${GREEN}Connection Added!${NC}"
-    echo -e "Service Name: ${YELLOW}$SERVICE_NAME${NC}"
-    echo -e "Local Endpoint: ${YELLOW}127.0.0.1:$LOCAL_PORT${NC}"
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "${GREEN}          IRAN SETUP COMPLETE                ${NC}"
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "${CYAN}Status ($SERVICE_NAME):${NC}"
+    systemctl status $SERVICE_NAME --no-pager | grep "Active:"
+    echo -e "---------------------------------------------"
+    echo -e "${YELLOW}COPY THIS INTO YOUR X-UI OUTBOUND CONFIG:${NC}"
+    echo ""
+    echo -e "Protocol:       ${GREEN}WireGuard${NC}"
+    echo -e "Address:        ${GREEN}10.0.0.2${NC} (Or the IP you set in Kharej)"
+    echo -e "Private Key:    ${GREEN}<Generate in Panel>${NC}"
+    echo -e "MTU:            ${GREEN}1200${NC}"
+    echo -e "Peer PublicKey: ${GREEN}<PUT KHAREJ PUBLIC KEY HERE>${NC}"
+    echo -e "Peer Endpoint:  ${GREEN}127.0.0.1:$LOCAL_PORT${NC}"
+    echo -e "Allowed IPs:    ${GREEN}0.0.0.0/0${NC}"
+    echo -e "KeepAlive:      ${GREEN}25${NC}"
+    echo ""
+    echo -e "${GREEN}=============================================${NC}"
+    press_enter
 }
 
 # --- Delete Functions ---
@@ -214,7 +289,6 @@ delete_menu() {
     if [[ $del_opt == "1" ]]; then
         echo -e "${CYAN}Active Services:${NC}"
         
-        # Array of services
         files=(/etc/systemd/system/udp2raw*.service)
         
         if [[ ! -e "${files[0]}" ]]; then
@@ -222,7 +296,6 @@ delete_menu() {
             return
         fi
 
-        # List with numbers
         i=1
         for f in "${files[@]}"; do
             filename=$(basename "$f")
@@ -233,7 +306,6 @@ delete_menu() {
         
         read -p "Select number to delete: " num
         
-        # Validation
         if [[ "$num" == "0" || -z "$num" ]]; then return; fi
         
         if ! [[ "$num" =~ ^[0-9]+$ ]] || [[ "$num" -ge "$i" ]] || [[ "$num" -lt 1 ]]; then
@@ -241,7 +313,6 @@ delete_menu() {
             return
         fi
         
-        # Execute Delete
         index=$((num-1))
         TARGET_FILE="${files[$index]}"
         SERVICE_NAME=$(basename "$TARGET_FILE")
@@ -286,7 +357,9 @@ while true; do
     echo "2) Iran"
     echo "3) Add Peer (Kharej)"
     echo "4) Add More Kharej To Iran"
-    echo "5) Delete / Uninstall"
+    echo "5) System Status"
+    echo "6) Restart WireGuard"
+    echo "7) Delete / Uninstall"
     echo "0) Exit"
     echo ""
     read -p "Select: " opt
@@ -296,7 +369,9 @@ while true; do
         2) setup_iran; press_enter ;;
         3) add_peer_kharej; press_enter ;;
         4) setup_iran; press_enter ;;
-        5) delete_menu; press_enter ;;
+        5) show_status ;;
+        6) restart_wg ;;
+        7) delete_menu; press_enter ;;
         0) echo "Bye!"; exit 0 ;;
         *) echo "Invalid option"; press_enter ;;
     esac
