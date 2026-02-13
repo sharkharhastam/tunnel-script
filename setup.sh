@@ -280,7 +280,7 @@ delete_menu() {
 while true; do
     clear
     echo -e "${GREEN}======================================================${NC}"
-    echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v9 ${NC}"
+    echo -e "${YELLOW}       Wireguard Udp2Raw Tunnel By SharKhar           ${NC}"
     echo -e "${GREEN}======================================================${NC}"
     echo "1) Kharej"
     echo "2) Iran"
