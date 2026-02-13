@@ -30,14 +30,18 @@ install_dependencies() {
     apt update -y
     apt install wireguard iproute2 net-tools nano wget tar -y
     
-    echo -e "${YELLOW}[*] Downloading UDP2Raw...${NC}"
-    cd /root
-    wget https://github.com/wangyu-/udp2raw-tunnel/releases/download/20200818.0/udp2raw_binaries.tar.gz
-    tar xf udp2raw_binaries.tar.gz
-    mv udp2raw_amd64 /root/udp2raw
-    chmod +x /root/udp2raw
-    rm udp2raw_binaries.tar.gz version.txt
-    echo -e "${GREEN}[+] Dependencies installed.${NC}"
+    # Check if udp2raw exists
+    if [ ! -f /root/udp2raw ]; then
+        echo -e "${YELLOW}[*] Downloading UDP2Raw...${NC}"
+        cd /root
+        wget https://github.com/wangyu-/udp2raw-tunnel/releases/download/20200818.0/udp2raw_binaries.tar.gz
+        tar xf udp2raw_binaries.tar.gz
+        mv udp2raw_amd64 /root/udp2raw
+        chmod +x /root/udp2raw
+        rm udp2raw_binaries.tar.gz version.txt
+    else
+        echo -e "${GREEN}[+] UDP2Raw already installed.${NC}"
+    fi
 }
 
 setup_external() {
@@ -65,9 +69,6 @@ PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; iptables -A FORWA
 PostDown = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT
 
 [Peer]
-# Placeholder for Iran Client - No Key needed here if Iran is Client only, 
-# but usually needed if Iran acts as peer. 
-# For this setup, we allow the IP.
 AllowedIPs = 10.0.0.2/32
 EOF
 
@@ -140,7 +141,7 @@ EOF
     echo -e "${GREEN}         IRAN SERVER SETUP COMPLETE          ${NC}"
     echo -e "${GREEN}=============================================${NC}"
     echo -e "Now go to your X-UI Panel -> Outbounds -> Add WireGuard:"
-    echo -e "Address: ${YELLOW]10.0.0.2${NC}"
+    echo -e "Address: ${YELLOW}10.0.0.2${NC}"
     echo -e "Private Key: (Generate one in panel)"
     echo -e "Peer Public Key: (The one you got from External Server)"
     echo -e "Endpoint: ${YELLOW}127.0.0.1:3333${NC}"
