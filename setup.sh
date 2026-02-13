@@ -17,8 +17,8 @@ fi
 
 press_enter() {
     echo ""
-    read -p "Press Enter to return to Main Menu..."
-    show_menu
+    echo -e "${CYAN}---------------------------------${NC}"
+    read -p "Press Enter to return to menu..."
 }
 
 install_dependencies() {
@@ -63,12 +63,14 @@ setup_kharej_initial() {
     
     if [[ -f "/etc/wireguard/wg0.conf" ]]; then
         echo -e "${RED}WireGuard is already installed! Use option 3 (Add Peer).${NC}"
-        press_enter
         return
     fi
 
     echo -e "${YELLOW}--- Initial Kharej Setup ---${NC}"
+    echo "0) Back to Menu"
     read -p "Enter IRAN Public Key: " PUB_KEY
+    if [[ "$PUB_KEY" == "0" || -z "$PUB_KEY" ]]; then return; fi
+
     read -p "Enter IRAN Internal IP (Default 10.0.0.2): " INT_IP
     INT_IP=${INT_IP:-10.0.0.2}
     read -p "Enter Tunnel Password: " PASS
@@ -119,25 +121,23 @@ EOF
     
     IP=$(curl -s http://checkip.amazonaws.com)
     echo -e "${GREEN}Kharej Installed.${NC} Public Key: ${YELLOW}$MY_PUB${NC}"
-    press_enter
 }
 
 add_peer_kharej() {
     if [[ ! -f "/etc/wireguard/wg0.conf" ]]; then
         echo -e "${RED}WireGuard not found. Run Initial Setup (Option 1) first.${NC}"
-        press_enter
         return
     fi
 
     echo -e "${CYAN}--- Add New Peer to wg0 ---${NC}"
+    echo "0) Back to Menu"
     read -p "Enter NEW Iran Public Key: " NEW_PUB
-    if [ -z "$NEW_PUB" ]; then echo "Cancelled."; press_enter; return; fi
+    if [[ "$NEW_PUB" == "0" || -z "$NEW_PUB" ]]; then return; fi
     
     read -p "Enter NEW Iran Internal IP (e.g., 10.0.0.3): " NEW_IP
     
     if grep -w "$NEW_IP" /etc/wireguard/wg0.conf; then
         echo -e "${RED}Error: IP $NEW_IP is already in use in wg0.conf!${NC}"
-        press_enter
         return
     fi
 
@@ -151,7 +151,6 @@ EOF
 
     systemctl restart wg-quick@wg0
     echo -e "${GREEN}Peer Added Successfully!${NC}"
-    press_enter
 }
 
 # --- IRAN Functions ---
@@ -170,8 +169,9 @@ setup_iran() {
     fi
 
     echo -e "${CYAN}Adding Connection (ID: $ID)${NC}"
+    echo "0) Back to Menu"
     read -p "Enter Kharej IP: " REM_IP
-    if [ -z "$REM_IP" ]; then echo "Cancelled."; press_enter; return; fi
+    if [[ "$REM_IP" == "0" || -z "$REM_IP" ]]; then return; fi
     
     read -p "Enter Kharej UDP2Raw Port (Usually 1376): " REM_PORT
     REM_PORT=${REM_PORT:-1376}
@@ -200,7 +200,6 @@ EOF
     echo -e "${GREEN}Connection Added!${NC}"
     echo -e "Service Name: ${YELLOW}$SERVICE_NAME${NC}"
     echo -e "Local Endpoint: ${YELLOW}127.0.0.1:$LOCAL_PORT${NC}"
-    press_enter
 }
 
 # --- Delete Functions ---
@@ -215,18 +214,15 @@ delete_menu() {
     if [[ $del_opt == "1" ]]; then
         echo -e "${CYAN}Active Services:${NC}"
         
-        # Create an array of service files
+        # Array of services
         files=(/etc/systemd/system/udp2raw*.service)
         
-        # Check if no files exist (if pattern matches nothing, it returns the pattern string itself if nullglob is off, 
-        # but let's check existence of the first element)
         if [[ ! -e "${files[0]}" ]]; then
             echo -e "${YELLOW}No active udp2raw services found.${NC}"
-            press_enter
             return
         fi
 
-        # List files with numbers
+        # List with numbers
         i=1
         for f in "${files[@]}"; do
             filename=$(basename "$f")
@@ -238,64 +234,53 @@ delete_menu() {
         read -p "Select number to delete: " num
         
         # Validation
-        if [[ "$num" == "0" || -z "$num" ]]; then
-            show_menu
-            return
-        fi
+        if [[ "$num" == "0" || -z "$num" ]]; then return; fi
         
         if ! [[ "$num" =~ ^[0-9]+$ ]] || [[ "$num" -ge "$i" ]] || [[ "$num" -lt 1 ]]; then
             echo -e "${RED}Invalid selection!${NC}"
-            press_enter
             return
         fi
         
-        # Map number to file
+        # Execute Delete
         index=$((num-1))
         TARGET_FILE="${files[$index]}"
         SERVICE_NAME=$(basename "$TARGET_FILE")
         
-        # Execute Delete
         systemctl stop $SERVICE_NAME
         systemctl disable $SERVICE_NAME
         rm "$TARGET_FILE"
         systemctl daemon-reload
         echo -e "${GREEN}Deleted: $SERVICE_NAME${NC}"
-        press_enter
 
     elif [[ $del_opt == "2" ]]; then
         echo -e "${RED}WARNING: This will delete WireGuard and ALL udp2raw tunnels!${NC}"
         read -p "Are you sure? (y/N): " confirm
         
-        # If not 'y', return to menu
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+            systemctl stop wg-quick@wg0 udp2raw*
+            rm -f /etc/systemd/system/udp2raw*
+            rm -rf /etc/wireguard
+            rm -f /root/udp2raw
+            apt remove wireguard -y
+            systemctl daemon-reload
+            echo -e "${GREEN}Fully Uninstalled.${NC}"
+        else
             echo "Cancelled."
-            show_menu
-            return
         fi
-
-        systemctl stop wg-quick@wg0 udp2raw*
-        rm -f /etc/systemd/system/udp2raw*
-        rm -rf /etc/wireguard
-        rm -f /root/udp2raw
-        apt remove wireguard -y
-        systemctl daemon-reload
-        echo -e "${GREEN}Fully Uninstalled.${NC}"
-        press_enter
     
     elif [[ $del_opt == "0" ]]; then
-        show_menu
+        return
     else
         echo "Invalid option."
-        press_enter
     fi
 }
 
-# --- Main Menu Loop ---
+# --- Main Loop ---
 
-show_menu() {
+while true; do
     clear
     echo -e "${GREEN}======================================================${NC}"
-    echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v8 ${NC}"
+    echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v9 ${NC}"
     echo -e "${GREEN}======================================================${NC}"
     echo "1) Kharej"
     echo "2) Iran"
@@ -307,15 +292,12 @@ show_menu() {
     read -p "Select: " opt
 
     case $opt in
-        1) setup_kharej_initial ;;
-        2) setup_iran ;;
-        3) add_peer_kharej ;;
-        4) setup_iran ;;
-        5) delete_menu ;;
-        0) exit 0 ;;
+        1) setup_kharej_initial; press_enter ;;
+        2) setup_iran; press_enter ;;
+        3) add_peer_kharej; press_enter ;;
+        4) setup_iran; press_enter ;;
+        5) delete_menu; press_enter ;;
+        0) echo "Bye!"; exit 0 ;;
         *) echo "Invalid option"; press_enter ;;
     esac
-}
-
-# Start the script
-show_menu
+done
