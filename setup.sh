@@ -15,6 +15,12 @@ fi
 
 # --- Helper Functions ---
 
+press_enter() {
+    echo ""
+    read -p "Press Enter to return to Main Menu..."
+    show_menu
+}
+
 install_dependencies() {
     if ! command -v wg &> /dev/null || [ ! -f /root/udp2raw ]; then
         echo -e "${YELLOW}[*] Installing dependencies...${NC}"
@@ -57,6 +63,7 @@ setup_kharej_initial() {
     
     if [[ -f "/etc/wireguard/wg0.conf" ]]; then
         echo -e "${RED}WireGuard is already installed! Use option 3 (Add Peer).${NC}"
+        press_enter
         return
     fi
 
@@ -112,24 +119,28 @@ EOF
     
     IP=$(curl -s http://checkip.amazonaws.com)
     echo -e "${GREEN}Kharej Installed.${NC} Public Key: ${YELLOW}$MY_PUB${NC}"
+    press_enter
 }
 
 add_peer_kharej() {
     if [[ ! -f "/etc/wireguard/wg0.conf" ]]; then
         echo -e "${RED}WireGuard not found. Run Initial Setup (Option 1) first.${NC}"
+        press_enter
         return
     fi
 
     echo -e "${CYAN}--- Add New Peer to wg0 ---${NC}"
     read -p "Enter NEW Iran Public Key: " NEW_PUB
+    if [ -z "$NEW_PUB" ]; then echo "Cancelled."; press_enter; return; fi
+    
     read -p "Enter NEW Iran Internal IP (e.g., 10.0.0.3): " NEW_IP
     
     if grep -w "$NEW_IP" /etc/wireguard/wg0.conf; then
         echo -e "${RED}Error: IP $NEW_IP is already in use in wg0.conf!${NC}"
+        press_enter
         return
     fi
 
-    # Append to wg0.conf
     cat <<EOF >> /etc/wireguard/wg0.conf
 
 [Peer]
@@ -138,9 +149,9 @@ PublicKey = $NEW_PUB
 AllowedIPs = $NEW_IP/32
 EOF
 
-    # Restart WG to apply
     systemctl restart wg-quick@wg0
     echo -e "${GREEN}Peer Added Successfully!${NC}"
+    press_enter
 }
 
 # --- IRAN Functions ---
@@ -160,6 +171,8 @@ setup_iran() {
 
     echo -e "${CYAN}Adding Connection (ID: $ID)${NC}"
     read -p "Enter Kharej IP: " REM_IP
+    if [ -z "$REM_IP" ]; then echo "Cancelled."; press_enter; return; fi
+    
     read -p "Enter Kharej UDP2Raw Port (Usually 1376): " REM_PORT
     REM_PORT=${REM_PORT:-1376}
     read -p "Enter Tunnel Password: " PASS
@@ -187,76 +200,122 @@ EOF
     echo -e "${GREEN}Connection Added!${NC}"
     echo -e "Service Name: ${YELLOW}$SERVICE_NAME${NC}"
     echo -e "Local Endpoint: ${YELLOW}127.0.0.1:$LOCAL_PORT${NC}"
+    press_enter
 }
 
 # --- Delete Functions ---
 
 delete_menu() {
     echo -e "${RED}--- Delete Menu ---${NC}"
-    echo "1) Delete an Iran Connection (udp2raw service)"
+    echo "1) Delete an Iran Connection (Select by Number)"
     echo "2) Uninstall Everything (Full Clean)"
+    echo "0) Back to Main Menu"
     read -p "Select: " del_opt
 
     if [[ $del_opt == "1" ]]; then
-        # List Active Services
         echo -e "${CYAN}Active Services:${NC}"
-        found=0
-        for s in /etc/systemd/system/udp2raw*.service; do
-            if [[ -f "$s" ]]; then
-                name=$(basename "$s")
-                echo " - $name"
-                found=1
-            fi
-        done
         
-        if [[ $found -eq 0 ]]; then echo "No services found."; return; fi
+        # Create an array of service files
+        files=(/etc/systemd/system/udp2raw*.service)
         
-        echo ""
-        read -p "Type the FULL service name to delete (e.g. udp2raw-2.service): " S_NAME
-        
-        if [[ -f "/etc/systemd/system/$S_NAME" ]]; then
-            systemctl stop $S_NAME
-            systemctl disable $S_NAME
-            rm "/etc/systemd/system/$S_NAME"
-            systemctl daemon-reload
-            echo -e "${GREEN}Deleted $S_NAME${NC}"
-        else
-            echo -e "${RED}File not found!${NC}"
+        # Check if no files exist (if pattern matches nothing, it returns the pattern string itself if nullglob is off, 
+        # but let's check existence of the first element)
+        if [[ ! -e "${files[0]}" ]]; then
+            echo -e "${YELLOW}No active udp2raw services found.${NC}"
+            press_enter
+            return
         fi
 
-    elif [[ $del_opt == "2" ]]; then
-        read -p "Are you sure? This deletes ALL configs. (y/n): " confirm
-        if [[ $confirm == "y" ]]; then
-            systemctl stop wg-quick@wg0 udp2raw*
-            rm -f /etc/systemd/system/udp2raw*
-            rm -rf /etc/wireguard
-            rm -f /root/udp2raw
-            apt remove wireguard -y
-            systemctl daemon-reload
-            echo -e "${GREEN}Fully Uninstalled.${NC}"
+        # List files with numbers
+        i=1
+        for f in "${files[@]}"; do
+            filename=$(basename "$f")
+            echo "$i) $filename"
+            ((i++))
+        done
+        echo "0) Cancel"
+        
+        read -p "Select number to delete: " num
+        
+        # Validation
+        if [[ "$num" == "0" || -z "$num" ]]; then
+            show_menu
+            return
         fi
+        
+        if ! [[ "$num" =~ ^[0-9]+$ ]] || [[ "$num" -ge "$i" ]] || [[ "$num" -lt 1 ]]; then
+            echo -e "${RED}Invalid selection!${NC}"
+            press_enter
+            return
+        fi
+        
+        # Map number to file
+        index=$((num-1))
+        TARGET_FILE="${files[$index]}"
+        SERVICE_NAME=$(basename "$TARGET_FILE")
+        
+        # Execute Delete
+        systemctl stop $SERVICE_NAME
+        systemctl disable $SERVICE_NAME
+        rm "$TARGET_FILE"
+        systemctl daemon-reload
+        echo -e "${GREEN}Deleted: $SERVICE_NAME${NC}"
+        press_enter
+
+    elif [[ $del_opt == "2" ]]; then
+        echo -e "${RED}WARNING: This will delete WireGuard and ALL udp2raw tunnels!${NC}"
+        read -p "Are you sure? (y/N): " confirm
+        
+        # If not 'y', return to menu
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Cancelled."
+            show_menu
+            return
+        fi
+
+        systemctl stop wg-quick@wg0 udp2raw*
+        rm -f /etc/systemd/system/udp2raw*
+        rm -rf /etc/wireguard
+        rm -f /root/udp2raw
+        apt remove wireguard -y
+        systemctl daemon-reload
+        echo -e "${GREEN}Fully Uninstalled.${NC}"
+        press_enter
+    
+    elif [[ $del_opt == "0" ]]; then
+        show_menu
+    else
+        echo "Invalid option."
+        press_enter
     fi
 }
 
-# --- Main ---
+# --- Main Menu Loop ---
 
-clear
-echo -e "${GREEN}======================================================${NC}"
-echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v5 ${NC}"
-echo -e "${GREEN}======================================================${NC}"
-echo "1) Kharej"
-echo "2) Iran"
-echo "3) Add Peer (Kharej)"
-echo "4) Add More Kharej To Iran"
-echo "5) Delete / Uninstall"
-echo ""
-read -p "Select: " opt
+show_menu() {
+    clear
+    echo -e "${GREEN}======================================================${NC}"
+    echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v8 ${NC}"
+    echo -e "${GREEN}======================================================${NC}"
+    echo "1) Kharej"
+    echo "2) Iran"
+    echo "3) Add Peer (Kharej)"
+    echo "4) Add More Kharej To Iran"
+    echo "5) Delete / Uninstall"
+    echo "0) Exit"
+    echo ""
+    read -p "Select: " opt
 
-case $opt in
-    1) setup_kharej_initial ;;
-    2) setup_iran ;;
-    3) add_peer_kharej ;;
-    4) setup_iran ;;
-    5) delete_menu ;;
-    *) echo "Invalid" ;;
-esac
+    case $opt in
+        1) setup_kharej_initial ;;
+        2) setup_iran ;;
+        3) add_peer_kharej ;;
+        4) setup_iran ;;
+        5) delete_menu ;;
+        0) exit 0 ;;
+        *) echo "Invalid option"; press_enter ;;
+    esac
+}
+
+# Start the script
+show_menu
