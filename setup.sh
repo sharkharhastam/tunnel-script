@@ -34,9 +34,6 @@ install_dependencies() {
 }
 
 get_next_iran_id() {
-    # Finds the next available ID for udp2raw service
-    # 1 -> udp2raw.service
-    # 2 -> udp2raw-2.service
     local i=1
     while true; do
         if [[ $i -eq 1 ]]; then
@@ -59,7 +56,7 @@ setup_kharej_initial() {
     install_dependencies
     
     if [[ -f "/etc/wireguard/wg0.conf" ]]; then
-        echo -e "${RED}WireGuard is already installed! Use 'Add Peer' option.${NC}"
+        echo -e "${RED}WireGuard is already installed! Use option 3 (Add Peer).${NC}"
         return
     fi
 
@@ -119,7 +116,7 @@ EOF
 
 add_peer_kharej() {
     if [[ ! -f "/etc/wireguard/wg0.conf" ]]; then
-        echo -e "${RED}WireGuard not found. Run Initial Setup first.${NC}"
+        echo -e "${RED}WireGuard not found. Run Initial Setup (Option 1) first.${NC}"
         return
     fi
 
@@ -127,8 +124,8 @@ add_peer_kharej() {
     read -p "Enter NEW Iran Public Key: " NEW_PUB
     read -p "Enter NEW Iran Internal IP (e.g., 10.0.0.3): " NEW_IP
     
-    if grep -q "$NEW_IP" /etc/wireguard/wg0.conf; then
-        echo -e "${RED}This IP is already in use in wg0.conf!${NC}"
+    if grep -w "$NEW_IP" /etc/wireguard/wg0.conf; then
+        echo -e "${RED}Error: IP $NEW_IP is already in use in wg0.conf!${NC}"
         return
     fi
 
@@ -153,10 +150,6 @@ setup_iran() {
     
     ID=$(get_next_iran_id)
     
-    # Calculate Names and Ports
-    # ID 1 -> Service: udp2raw     | Port: 3333
-    # ID 2 -> Service: udp2raw-2   | Port: 3334
-    
     if [[ $ID -eq 1 ]]; then
         SERVICE_NAME="udp2raw"
         LOCAL_PORT=3333
@@ -165,7 +158,7 @@ setup_iran() {
         LOCAL_PORT=$((3333 + ID - 1))
     fi
 
-    echo -e "${CYAN}Adding New Connection (ID: $ID)${NC}"
+    echo -e "${CYAN}Adding Connection (ID: $ID)${NC}"
     read -p "Enter Kharej IP: " REM_IP
     read -p "Enter Kharej UDP2Raw Port (Usually 1376): " REM_PORT
     REM_PORT=${REM_PORT:-1376}
@@ -248,20 +241,22 @@ delete_menu() {
 # --- Main ---
 
 clear
-echo -e "${GREEN}===========================================${NC}"
-echo -e "${YELLOW}   Single-Interface Tunnel Manager v5      ${NC}"
-echo -e "${GREEN}===========================================${NC}"
-echo "1) KHAREJ: Initial Setup (Fresh Install)"
-echo "2) KHAREJ: Add New Peer (For another Iran)"
-echo "3) IRAN: Add New Connection (udp2raw client)"
-echo "4) Delete / Uninstall"
+echo -e "${GREEN}======================================================${NC}"
+echo -e "${YELLOW} Wireguard Udp2Raw Single-Interface Tunnel Manager v5 ${NC}"
+echo -e "${GREEN}======================================================${NC}"
+echo "1) Kharej"
+echo "2) Iran"
+echo "3) Add Peer (Kharej)"
+echo "4) Add More Kharej To Iran"
+echo "5) Delete / Uninstall"
 echo ""
 read -p "Select: " opt
 
 case $opt in
     1) setup_kharej_initial ;;
-    2) add_peer_kharej ;;
-    3) setup_iran ;;
-    4) delete_menu ;;
+    2) setup_iran ;;
+    3) add_peer_kharej ;;
+    4) setup_iran ;;
+    5) delete_menu ;;
     *) echo "Invalid" ;;
 esac
