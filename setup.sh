@@ -288,52 +288,86 @@ EOF
 
 delete_menu() {
     echo -e "${RED}--- Delete Menu ---${NC}"
-    echo "1) Delete an Iran Connection (Select by Number)"
-    echo "2) Uninstall Everything (Full Clean)"
+    echo "1) Delete an Iran Connection (udp2raw)"
+    echo "2) Delete a Kharej Peer (WireGuard Client)"
+    echo "3) Uninstall Everything (Full Clean)"
     echo "0) Back to Main Menu"
     read -p "Select: " del_opt
 
+    # --- DELETE IRAN UDP2RAW ---
     if [[ $del_opt == "1" ]]; then
-        echo -e "${CYAN}Active Services:${NC}"
-        
+        echo -e "${CYAN}Active Iran Connections:${NC}"
         files=(/etc/systemd/system/udp2raw*.service)
-        
         if [[ ! -e "${files[0]}" ]]; then
-            echo -e "${YELLOW}No active udp2raw services found.${NC}"
-            return
+            echo -e "${YELLOW}No active udp2raw services found.${NC}"; return
         fi
-
+        
         i=1
         for f in "${files[@]}"; do
-            filename=$(basename "$f")
-            echo "$i) $filename"
+            echo "$i) $(basename "$f")"
+            ((i++))
+        done
+        echo "0) Cancel"
+        read -p "Select number: " num
+        if [[ "$num" == "0" || -z "$num" ]]; then return; fi
+        
+        index=$((num-1))
+        TARGET="${files[$index]}"
+        
+        if [[ -f "$TARGET" ]]; then
+            S_NAME=$(basename "$TARGET")
+            systemctl stop $S_NAME
+            systemctl disable $S_NAME
+            rm "$TARGET"
+            systemctl daemon-reload
+            echo -e "${GREEN}Deleted: $S_NAME${NC}"
+        else
+            echo "Invalid selection."
+        fi
+
+    # --- DELETE KHAREJ PEER ---
+    elif [[ $del_opt == "2" ]]; then
+        if [[ ! -f "/etc/wireguard/wg0.conf" ]]; then
+            echo -e "${RED}WireGuard config not found.${NC}"; return
+        fi
+        
+        echo -e "${CYAN}Active Peers (Kharej Clients):${NC}"
+        # Extract IPs from config
+        mapfile -t peers < <(grep "AllowedIPs" /etc/wireguard/wg0.conf | cut -d'=' -f2 | tr -d ' ')
+        
+        if [[ ${#peers[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No peers found in config.${NC}"; return
+        fi
+        
+        i=1
+        for ip in "${peers[@]}"; do
+            echo "$i) $ip"
             ((i++))
         done
         echo "0) Cancel"
         
-        read -p "Select number to delete: " num
-        
+        read -p "Select peer to DELETE: " num
         if [[ "$num" == "0" || -z "$num" ]]; then return; fi
         
-        if ! [[ "$num" =~ ^[0-9]+$ ]] || [[ "$num" -ge "$i" ]] || [[ "$num" -lt 1 ]]; then
-            echo -e "${RED}Invalid selection!${NC}"
-            return
-        fi
-        
         index=$((num-1))
-        TARGET_FILE="${files[$index]}"
-        SERVICE_NAME=$(basename "$TARGET_FILE")
+        TARGET_IP="${peers[$index]}"
         
-        systemctl stop $SERVICE_NAME
-        systemctl disable $SERVICE_NAME
-        rm "$TARGET_FILE"
-        systemctl daemon-reload
-        echo -e "${GREEN}Deleted: $SERVICE_NAME${NC}"
+        if [[ -z "$TARGET_IP" ]]; then echo "Invalid selection."; return; fi
+        
+        echo -e "${YELLOW}Deleting Peer with IP: $TARGET_IP...${NC}"
+        
+        # Use sed to delete the Peer block (From [Peer] down to the line containing the IP)
+        # Note: This relies on standard script structure where AllowedIPs is last line of block
+        ESCAPED_IP=$(echo $TARGET_IP | sed 's/\//\\\//g')
+        sed -i "/\[Peer\]/,/AllowedIPs = $ESCAPED_IP/d" /etc/wireguard/wg0.conf
+        
+        systemctl restart wg-quick@wg0
+        echo -e "${GREEN}Peer deleted and WireGuard restarted.${NC}"
 
-    elif [[ $del_opt == "2" ]]; then
+    # --- UNINSTALL ALL ---
+    elif [[ $del_opt == "3" ]]; then
         echo -e "${RED}WARNING: This will delete WireGuard and ALL udp2raw tunnels!${NC}"
         read -p "Are you sure? (y/N): " confirm
-        
         if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
             systemctl stop wg-quick@wg0 udp2raw*
             rm -f /etc/systemd/system/udp2raw*
