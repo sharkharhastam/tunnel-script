@@ -17,9 +17,9 @@ echo -e "${GREEN}====================================================${NC}"
 echo -e "${YELLOW}       Auto Tunnel Setup (WireGuard + UDP2Raw)      ${NC}"
 echo -e "${GREEN}====================================================${NC}"
 echo ""
-echo "1) Install EXTERNAL Server (Kharej)"
-echo "2) Install IRAN Server (Iran)"
-echo "3) Uninstall/Clean"
+echo "1) Install KHAREJ Server"
+echo "2) Install IRAN Server"
+echo "3) DELETE EVERYTHING (Uninstall & Clean)"
 echo ""
 read -p "Select an option [1-3]: " option
 
@@ -44,8 +44,22 @@ install_dependencies() {
     fi
 }
 
-setup_external() {
+setup_kharej() {
     install_dependencies
+    
+    # Inputs needed for Peer (Iran)
+    echo -e "${YELLOW}--- Configuration Needed ---${NC}"
+    read -p "Enter IRAN Server Public Key: " IRAN_PUB_KEY
+    if [ -z "$IRAN_PUB_KEY" ]; then
+        echo -e "${RED}Error: Public Key cannot be empty! Exiting...${NC}"
+        exit 1
+    fi
+
+    read -p "Enter IRAN Internal IP (Press Enter for default 10.0.0.2): " IRAN_INTERNAL_IP
+    IRAN_INTERNAL_IP=${IRAN_INTERNAL_IP:-10.0.0.2}
+
+    read -p "Enter Tunnel Password (default: newtunnel): " TUNNEL_PASS
+    TUNNEL_PASS=${TUNNEL_PASS:-newtunnel}
     
     # Generate Keys
     echo -e "${YELLOW}[*] Generating WireGuard Keys...${NC}"
@@ -54,9 +68,6 @@ setup_external() {
     PRIVATE_KEY=$(cat /etc/wireguard/privatekey)
     PUBLIC_KEY=$(cat /etc/wireguard/publickey)
     
-    read -p "Enter Tunnel Password (default: newtunnel): " TUNNEL_PASS
-    TUNNEL_PASS=${TUNNEL_PASS:-newtunnel}
-
     # Config WG0
     cat <<EOF > /etc/wireguard/wg0.conf
 [Interface]
@@ -69,7 +80,8 @@ PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; iptables -A FORWA
 PostDown = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT
 
 [Peer]
-AllowedIPs = 10.0.0.2/32
+PublicKey = $IRAN_PUB_KEY
+AllowedIPs = $IRAN_INTERNAL_IP/32
 EOF
 
     # Config UDP2Raw Service
@@ -99,7 +111,7 @@ EOF
     # Show Info
     IP=$(curl -s http://checkip.amazonaws.com)
     echo -e "${GREEN}=============================================${NC}"
-    echo -e "${GREEN}       EXTERNAL SERVER SETUP COMPLETE        ${NC}"
+    echo -e "${GREEN}          KHAREJ SETUP COMPLETE              ${NC}"
     echo -e "${GREEN}=============================================${NC}"
     echo -e "Your Server IP: ${YELLOW}$IP${NC}"
     echo -e "Tunnel Password: ${YELLOW}$TUNNEL_PASS${NC}"
@@ -111,8 +123,9 @@ EOF
 setup_iran() {
     install_dependencies
     
-    read -p "Enter EXTERNAL Server IP: " REMOTE_IP
-    read -p "Enter Tunnel Password (same as external): " TUNNEL_PASS
+    echo -e "${YELLOW}--- Configuration Needed ---${NC}"
+    read -p "Enter KHAREJ Server IP: " REMOTE_IP
+    read -p "Enter Tunnel Password (same as kharej): " TUNNEL_PASS
     TUNNEL_PASS=${TUNNEL_PASS:-newtunnel}
     
     # Config UDP2Raw Service (Client Mode)
@@ -138,31 +151,41 @@ EOF
     systemctl start udp2raw
     
     echo -e "${GREEN}=============================================${NC}"
-    echo -e "${GREEN}         IRAN SERVER SETUP COMPLETE          ${NC}"
+    echo -e "${GREEN}           IRAN SETUP COMPLETE               ${NC}"
     echo -e "${GREEN}=============================================${NC}"
     echo -e "Now go to your X-UI Panel -> Outbounds -> Add WireGuard:"
     echo -e "Address: ${YELLOW}10.0.0.2${NC}"
     echo -e "Private Key: (Generate one in panel)"
-    echo -e "Peer Public Key: (The one you got from External Server)"
+    echo -e "Peer Public Key: (The one you got from Kharej)"
     echo -e "Endpoint: ${YELLOW}127.0.0.1:3333${NC}"
     echo -e "MTU: ${YELLOW}1200${NC}"
     echo -e "${GREEN}=============================================${NC}"
 }
 
 uninstall() {
+    echo -e "${YELLOW}[!] Stopping and disabling services...${NC}"
     systemctl stop wg-quick@wg0 udp2raw
     systemctl disable wg-quick@wg0 udp2raw
+    
+    echo -e "${YELLOW}[!] Removing configuration files...${NC}"
     rm /etc/systemd/system/udp2raw.service
     rm -rf /etc/wireguard
     rm /root/udp2raw
+    
+    echo -e "${YELLOW}[!] Removing WireGuard package...${NC}"
+    apt remove wireguard -y
+    apt autoremove -y
+    
     systemctl daemon-reload
-    echo -e "${RED}Uninstalled successfully.${NC}"
+    echo -e "${GREEN}---------------------------------------------${NC}"
+    echo -e "${GREEN}   Everything has been deleted completely.   ${NC}"
+    echo -e "${GREEN}---------------------------------------------${NC}"
 }
 
 # --- Main Logic ---
 
 case $option in
-    1) setup_external ;;
+    1) setup_kharej ;;
     2) setup_iran ;;
     3) uninstall ;;
     *) echo "Invalid option" ;;
