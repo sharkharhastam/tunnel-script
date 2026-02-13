@@ -205,8 +205,15 @@ EOF
 
     systemctl restart wg-quick@wg0
     
-    echo -e "${GREEN}Peer Added Successfully!${NC}"
-    echo -e "Internal IP: ${YELLOW}$NEW_IP${NC}"
+    # Retrieve Kharej Public Key
+    MY_PUB=$(cat /etc/wireguard/publickey)
+    
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "${GREEN}       PEER ADDED SUCCESSFULLY!              ${NC}"
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "Peer Internal IP:              ${YELLOW}$NEW_IP${NC}"
+    echo -e "Kharej Server Public Key:      ${YELLOW}$MY_PUB${NC}"
+    echo -e "---------------------------------------------"
     echo -e "${CYAN}Status (wg0):${NC}"
     systemctl status wg-quick@wg0 --no-pager | grep "Active:"
     press_enter
